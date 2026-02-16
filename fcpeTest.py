@@ -3,6 +3,7 @@ import torch
 import librosa
 import numpy as np
 import pretty_midi
+from scipy.signal import medfilt, savgol_filter
 
 # Configure device and target hop size
 device = 'cpu'  # or 'cuda' if using a GPU
@@ -32,6 +33,35 @@ f0 = model.infer(
 )
 
 print(f0)
+
+
+def smooth_f0(f0_tensor, median_win=5, savgol_win=11, savgol_order=2, min_f0=1.0):
+    """Smooth an F0 curve (median then Savitzky-Golay) on voiced frames only."""
+    if isinstance(f0_tensor, torch.Tensor):
+        f0_np = f0_tensor.detach().cpu().numpy().squeeze().copy()
+    else:
+        f0_np = np.asarray(f0_tensor).squeeze().copy()
+
+    voiced = f0_np > min_f0
+
+    # --- Step 1: median filter to remove short pitch spikes ---
+    if np.sum(voiced) >= median_win:
+        voiced_vals = f0_np[voiced]
+        voiced_vals = medfilt(voiced_vals, kernel_size=median_win)
+        f0_np[voiced] = voiced_vals
+
+    # --- Step 2: Savitzky-Golay for gentle smoothing ---
+    if np.sum(voiced) >= savgol_win:
+        voiced_vals = f0_np[voiced]
+        voiced_vals = savgol_filter(voiced_vals, window_length=savgol_win, polyorder=savgol_order)
+        f0_np[voiced] = voiced_vals
+
+    return f0_np
+
+
+# Smooth the F0 curve before MIDI conversion
+f0_smoothed = smooth_f0(f0, median_win=5, savgol_win=11, savgol_order=2)
+
 
 def write_midi_from_f0(f0_values, hop, sample_rate, output_path, velocity=100, program=0, min_f0=1.0):
     if isinstance(f0_values, torch.Tensor):
@@ -66,9 +96,9 @@ def write_midi_from_f0(f0_values, hop, sample_rate, output_path, velocity=100, p
     pm.write(output_path)
 
 
-# Extract MIDI from f0 and save
+# Extract MIDI from smoothed f0 and save
 write_midi_from_f0(
-    f0,
+    f0_smoothed,
     hop=hop_size,
     sample_rate=sr,
     output_path="test.mid",
