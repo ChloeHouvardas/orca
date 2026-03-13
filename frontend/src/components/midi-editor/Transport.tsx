@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { PlaybackState } from '@/types/midi';
 
 interface Props {
@@ -22,6 +23,22 @@ function formatTime(seconds: number) {
 }
 
 export function Transport({ state, currentTime, bpm, fileName, onPlay, onPause, onStop, onBpmChange, onBack }: Props) {
+  const [localBpm, setLocalBpm] = useState(String(bpm));
+
+  // Sync if parent bpm changes externally
+  useEffect(() => {
+    setLocalBpm(String(bpm));
+  }, [bpm]);
+
+  const commitBpm = (raw: string) => {
+    const v = Number(raw);
+    if (!isNaN(v) && v >= 20 && v <= 400) {
+      onBpmChange(v);
+    } else {
+      setLocalBpm(String(bpm)); // revert invalid input
+    }
+  };
+
   return (
     <div className="flex items-center gap-3 bg-gray-900 border-b border-gray-800 px-4 h-14 flex-shrink-0">
       {/* Back */}
@@ -82,15 +99,22 @@ export function Transport({ state, currentTime, bpm, fileName, onPlay, onPause, 
       <div className="flex items-center gap-2">
         <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">BPM</span>
         <input
-          type="number"
-          value={bpm}
-          onChange={e => {
-            const v = Number(e.target.value);
-            if (v >= 20 && v <= 400) onBpmChange(v);
+          type="text"
+          inputMode="numeric"
+          value={localBpm}
+          onChange={e => setLocalBpm(e.target.value)}
+          onBlur={e => commitBpm(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              commitBpm((e.target as HTMLInputElement).value);
+              (e.target as HTMLInputElement).blur();
+            } else if (e.key === 'Escape') {
+              setLocalBpm(String(bpm));
+              (e.target as HTMLInputElement).blur();
+            }
           }}
+          onFocus={e => e.target.select()}
           className="w-16 bg-gray-800 text-white text-sm text-center rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:border-blue-500 tabular-nums"
-          min={20}
-          max={400}
         />
       </div>
     </div>
